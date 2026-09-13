@@ -9,3 +9,7 @@ venv/
 models/*.joblib
 state/*.json
 equity_curve.png
+
+# never commit brokerage credentials
+.env
+*.env
