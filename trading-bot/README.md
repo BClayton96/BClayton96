@@ -107,6 +107,75 @@ Each `paper-trade` run prints a JSON decision and updates
 `state/AAPL.json` with the simulated portfolio's cash, position, and full
 trade history.
 
+## Running automatically
+
+A daily bar strategy is meant to run once a day, not sit open in a
+terminal. `scripts/run_daily.sh` (macOS/Linux) and `scripts/run_daily.ps1`
+(Windows) wrap `live-trade` for exactly that: they read credentials from a
+local `.env` file, run one decision, and append the result to
+`logs/live-trade.log`. Neither script ever passes `--live` — they always
+hit Alpaca's paper endpoint. Going live stays a manual, deliberate command
+you run yourself (see below), never something a schedule does silently.
+
+### 1. One-time setup
+
+```bash
+cd trading-bot
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+cp .env.example .env
+# edit .env and fill in your Alpaca PAPER key/secret
+```
+
+Test it once by hand before scheduling anything:
+
+```bash
+bash scripts/run_daily.sh   # macOS/Linux
+# or: powershell -File scripts\run_daily.ps1   (Windows)
+
+cat logs/live-trade.log
+```
+
+Optional environment variables (also settable in `.env`):
+`TRADING_BOT_TICKER` (default `AAPL`), `TRADING_BOT_WEEKLY_BUDGET`
+(default `50`).
+
+### 2. Schedule it — macOS / Linux (cron)
+
+```bash
+crontab -e
+```
+
+Add a line to run after US market close on weekdays (adjust the time for
+your timezone — this example assumes the system clock is in US Eastern
+time, 4:30pm ET, Mon–Fri):
+
+```
+30 16 * * 1-5 /full/path/to/trading-bot/scripts/run_daily.sh
+```
+
+### 3. Schedule it — Windows (Task Scheduler)
+
+1. Open **Task Scheduler** → **Create Basic Task**.
+2. Trigger: **Daily**, then under Advanced set it to repeat only
+   Monday–Friday, around 4:30pm (after market close).
+3. Action: **Start a program** →
+   `powershell.exe` with arguments
+   `-File "C:\full\path\to\trading-bot\scripts\run_daily.ps1"`.
+
+### Checking on it
+
+- `logs/live-trade.log` — every run's decision and any errors, appended.
+- `state/<TICKER>_weekly_budget.json` — how much of this week's budget is
+  left.
+- Your [Alpaca paper dashboard](https://app.alpaca.markets/paper/dashboard/overview)
+  — the actual positions and orders.
+
+If a run fails (network down, expired keys, market holiday with stale
+data), it just logs the error and exits — nothing retries automatically.
+Check the log periodically rather than assuming silence means success.
+
 ## Going live with real money
 
 This is the part that actually spends dollars. Once you've set up paper
