@@ -15,8 +15,11 @@ approach cautiously (see **Going live with real money** below).
 
 ## How it works
 
-1. **Data** (`src/data.py`) — pulls daily OHLCV history from Yahoo Finance
-   via `yfinance` (no API key required).
+1. **Data** (`src/data.py`) — pulls daily OHLCV history from Alpaca's
+   market data API. Requires `ALPACA_API_KEY_ID` / `ALPACA_API_SECRET_KEY`
+   (the same credentials used everywhere else in this project) — Alpaca
+   requires authentication for historical bars even on a free/paper
+   account, so every command needs these set, not just `live-trade`.
 2. **Features** (`src/features.py`) — computes technical indicators (SMA/EMA
    ratios, RSI, MACD, rolling volatility, momentum, volume change) from data
    available up to and including each day, and a label ("did the price rise
@@ -55,6 +58,30 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### Get Alpaca API keys (required for every command, including `train`)
+
+1. Go to [alpaca.markets](https://alpaca.markets), sign up, and complete
+   their identity verification. **I (the AI) cannot do this step for
+   you** — it requires your own identity and consent, and no assistant
+   should ever be handed the keys to move your money without you
+   personally setting up the account and generating the credentials
+   yourself.
+2. From the dashboard, generate **paper trading** API keys (not live) —
+   these are what you want for everything below, including just fetching
+   historical data to train a model.
+3. Set them as environment variables. Never put these in code or commit
+   them to git (`.gitignore` already excludes `.env` files and
+   `state/*.json`, but double check before pushing):
+
+```bash
+export ALPACA_API_KEY_ID="your-key-id"
+export ALPACA_API_SECRET_KEY="your-secret-key"
+```
+
+Paper keys are enough for `train`, `backtest`, `paper-trade`, and
+`live-trade` without `--live`. You only need live keys — and the extra
+confirmation flags described below — once you're ready to risk real money.
+
 ## Usage
 
 Train a model on 5 years of history:
@@ -82,33 +109,11 @@ trade history.
 
 ## Going live with real money
 
-This is the part that actually spends dollars. Set it up carefully and in
-order:
+This is the part that actually spends dollars. Once you've set up paper
+keys as above (see **Get Alpaca API keys**) and are comfortable with how
+the bot behaves, go live carefully and in order:
 
-### 1. Create your own Alpaca account
-
-Go to [alpaca.markets](https://alpaca.markets), sign up, and complete their
-identity verification. **I (the AI) cannot do this step for you** — it
-requires your own identity and consent, and no assistant should ever be
-handed the keys to move your money without you personally setting up the
-account and generating the credentials yourself.
-
-Alpaca gives every account both a **paper** trading endpoint (fake money,
-identical API) and a **live** endpoint (real money). Get your paper API
-keys first from the dashboard and use those to test everything below
-before ever touching live keys.
-
-### 2. Set your API keys as environment variables
-
-Never put these in code or commit them to git (`.gitignore` already
-excludes `.env` files and `state/*.json`, but double check before pushing):
-
-```bash
-export ALPACA_API_KEY_ID="your-key-id"
-export ALPACA_API_SECRET_KEY="your-secret-key"
-```
-
-### 3. Test against Alpaca's paper endpoint first
+### 1. Test against Alpaca's paper endpoint first
 
 ```bash
 python main.py train --ticker AAPL --period 5y
@@ -120,9 +125,17 @@ the exact same order-submission code path as real trading, but with fake
 money. Run it for at least a couple of weeks and sanity-check the orders
 in your Alpaca paper dashboard before going further.
 
-### 4. Only then, go live — deliberately
+### 2. Only then, go live — deliberately, with live keys
+
+Alpaca issues a **separate key pair for live vs. paper** trading — going
+live means swapping `ALPACA_API_KEY_ID` / `ALPACA_API_SECRET_KEY` to your
+*live* keys from the dashboard first (paper keys will fail authentication
+against the live endpoint):
 
 ```bash
+export ALPACA_API_KEY_ID="your-LIVE-key-id"
+export ALPACA_API_SECRET_KEY="your-LIVE-secret-key"
+
 python main.py live-trade --ticker AAPL --weekly-budget 50 \
     --live --confirm-real-money
 ```

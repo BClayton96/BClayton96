@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """AI trading bot CLI.
 
-`train`, `backtest`, and `paper-trade` never leave this machine — they
+All commands need ALPACA_API_KEY_ID / ALPACA_API_SECRET_KEY set (Alpaca's
+market data API requires authentication even for historical bars), but
+`train`, `backtest`, and `paper-trade` never place real orders — they
 only simulate trades locally. `live-trade` can place REAL orders through
-an Alpaca brokerage account (real money) once you explicitly opt in with
---live --confirm-real-money, and only after you've set your own Alpaca
-API keys as environment variables. See README.md for full setup and the
-risk disclaimer.
+your Alpaca brokerage account (real money) once you explicitly opt in with
+--live --confirm-real-money. See README.md for full setup and the risk
+disclaimer.
 
 Subcommands:
     train        Train a model on historical data and save it to disk.
@@ -36,7 +37,11 @@ DEFAULT_STATE_DIR = Path("state")
 
 
 def cmd_train(args: argparse.Namespace) -> None:
-    price_df = fetch_price_history(args.ticker, period=args.period)
+    try:
+        price_df = fetch_price_history(args.ticker, period=args.period)
+    except RuntimeError as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
     dataset = build_dataset(price_df, with_labels=True)
     model = TradingModel().fit(dataset)
 
@@ -48,7 +53,11 @@ def cmd_train(args: argparse.Namespace) -> None:
 
 
 def cmd_backtest(args: argparse.Namespace) -> None:
-    price_df = fetch_price_history(args.ticker, start=args.start, end=args.end, period=args.period)
+    try:
+        price_df = fetch_price_history(args.ticker, start=args.start, end=args.end, period=args.period)
+    except RuntimeError as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
     result = run_backtest(
         price_df,
         ticker=args.ticker,
@@ -83,14 +92,18 @@ def cmd_paper_trade(args: argparse.Namespace) -> None:
     DEFAULT_STATE_DIR.mkdir(exist_ok=True)
     state_path = Path(args.state) if args.state else DEFAULT_STATE_DIR / f"{args.ticker.upper()}.json"
 
-    result = run_once(
-        ticker=args.ticker,
-        model_path=model_path,
-        state_path=state_path,
-        initial_cash=args.cash,
-        buy_threshold=args.buy_threshold,
-        sell_threshold=args.sell_threshold,
-    )
+    try:
+        result = run_once(
+            ticker=args.ticker,
+            model_path=model_path,
+            state_path=state_path,
+            initial_cash=args.cash,
+            buy_threshold=args.buy_threshold,
+            sell_threshold=args.sell_threshold,
+        )
+    except RuntimeError as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
     print_decision(result)
 
 
