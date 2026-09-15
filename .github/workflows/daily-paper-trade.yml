@@ -1,0 +1,98 @@
+# Runs one Alpaca PAPER-trading decision daily, in GitHub's cloud.
+#
+# This is the "no computer needed" way to run trading-bot/live-trade: it
+# never touches your own machine, and it NEVER passes --live. Going live
+# should stay a deliberate command you type yourself (see trading-bot's
+# README "Going live with real money") — not something a schedule does
+# unattended in CI. Do not add --live to this workflow.
+#
+# Requires two repository secrets (Settings > Secrets and variables >
+# Actions): ALPACA_API_KEY_ID and ALPACA_API_SECRET_KEY (paper keys).
+# Optional repository variables: TRADING_BOT_TICKER (default AAPL),
+# TRADING_BOT_WEEKLY_BUDGET (default 50).
+#
+# The weekly budget tracker (trading-bot/state/<TICKER>_weekly_budget.json)
+# is persisted across runs on a separate `bot-state` branch, since each
+# workflow run starts from a fresh checkout with no memory of prior runs.
+
+name: Daily paper trade
+
+on:
+  schedule:
+    # 20:30 UTC = 4:30pm US Eastern during daylight time (shifts to 3:30pm
+    # once DST ends, since cron here is fixed UTC) — weekdays only.
+    - cron: "30 20 * * 1-5"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-paper-trade
+  cancel-in-progress: false
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    env:
+      ALPACA_API_KEY_ID: ${{ secrets.ALPACA_API_KEY_ID }}
+      ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY }}
+      TICKER: ${{ vars.TRADING_BOT_TICKER || 'AAPL' }}
+      WEEKLY_BUDGET: ${{ vars.TRADING_BOT_WEEKLY_BUDGET || '50' }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: trading-bot
+        run: pip install -r requirements.txt
+
+      - name: Restore persisted weekly-budget state
+        run: |
+          mkdir -p trading-bot/state
+          git fetch origin bot-state 2>/dev/null || true
+          if git rev-parse --verify origin/bot-state >/dev/null 2>&1; then
+            git show "origin/bot-state:trading-bot/state/${TICKER}_weekly_budget.json" \
+              > "trading-bot/state/${TICKER}_weekly_budget.json" 2>/dev/null \
+              && echo "Restored prior weekly-budget state for $TICKER." \
+              || echo "No prior state for $TICKER yet — starting fresh."
+          else
+            echo "bot-state branch doesn't exist yet — starting fresh."
+          fi
+
+      - name: Train model on latest data
+        working-directory: trading-bot
+        run: python main.py train --ticker "$TICKER" --period 5y
+
+      - name: Make today's paper-trade decision
+        working-directory: trading-bot
+        run: |
+          python main.py live-trade --ticker "$TICKER" \
+            --weekly-budget "$WEEKLY_BUDGET" \
+            --budget-state "state/${TICKER}_weekly_budget.json"
+
+      - name: Persist weekly-budget state
+        run: |
+          git config user.name "ai-trader-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git fetch origin bot-state 2>/dev/null || true
+          if git rev-parse --verify origin/bot-state >/dev/null 2>&1; then
+            git worktree add ../bot-state-wt bot-state
+          else
+            git worktree add -b bot-state ../bot-state-wt
+          fi
+          mkdir -p ../bot-state-wt/trading-bot/state
+          cp trading-bot/state/*.json ../bot-state-wt/trading-bot/state/ 2>/dev/null || true
+          cd ../bot-state-wt
+          git add trading-bot/state
+          if ! git diff --cached --quiet; then
+            git commit -m "Update weekly budget state [skip ci]"
+            git push origin bot-state
+          else
+            echo "No state changes to persist."
+          fi
