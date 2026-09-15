@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+
+# generated artifacts
+models/*.joblib
+state/*.json
+equity_curve.png
+logs/
+
+# never commit brokerage credentials
+.env
+*.env
